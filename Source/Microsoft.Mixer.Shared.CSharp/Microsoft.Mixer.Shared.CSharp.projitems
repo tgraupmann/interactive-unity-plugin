@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <SharedGUID>5f89d2ae-5a19-4398-bcec-2283505d20e0</SharedGUID>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration">
+    <Import_RootNamespace>Microsoft.Mixer.Shared.CSharp</Import_RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveButtonControl.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveButtonEventArgs.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveControl.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveEventArgs.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveEventType.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveGroup.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveJoystickControl.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveJoystickEventArgs.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveManager.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveParticipant.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveParticipantJoinEventArgs.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveParticipantLeaveEventArgs.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveParticipantState.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveParticipantStateChangeEventArgs.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractiveScene.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractivityState.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractivityStateChangedEventArgs.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)LoggingLevel.cs" />
+  </ItemGroup>
+</Project>

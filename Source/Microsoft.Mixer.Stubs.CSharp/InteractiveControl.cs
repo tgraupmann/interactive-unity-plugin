@@ -1,0 +1,34 @@
+﻿namespace Microsoft.Mixer
+{
+    public class InteractiveControl
+    {
+        public string ControlID
+        {
+            get;
+            private set;
+        }
+
+        public bool Disabled
+        {
+            get;
+            private set;
+        }
+
+        public string HelpText
+        {
+            get;
+            private set;
+        }
+
+        internal string ETag;
+        internal string SceneID;
+
+        public void SetDisabled(bool disabled)
+        {
+        }
+
+        internal InteractiveControl(string controlID, bool disabled, string helpText, string eTag, string sceneID)
+        {
+        }
+    }
+}
