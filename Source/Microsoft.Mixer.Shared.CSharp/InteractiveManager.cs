@@ -1114,6 +1114,11 @@ namespace Microsoft.Mixer
                 throw new Exception("Error: The InteractivityManager's InteractivityState must be InteractivityEnabled before calling this method.");
             }
 
+            if (cooldown < 1000)
+            {
+                Log("Info: Did you mean to use a cooldown of " + (float)cooldown / 1000 + " seconds? Remember, cooldowns are in milliseconds.");
+            }
+
             // Get the control from our data structure to find it's etag
             string controlEtag = string.Empty;
             string controlSceneID = string.Empty;
@@ -1775,6 +1780,7 @@ namespace Microsoft.Mixer
                     {
                         _participants.Add(newParticipant);
                     }
+                    participants.Add(newParticipant);
                 }
             }
             return participants;
@@ -2222,24 +2228,6 @@ namespace Microsoft.Mixer
                             {
                                 InteractiveParticipant newParticipant = participants[i];
                                 newParticipant.State = InteractiveParticipantState.Joined;
-                                var existingParticipants = Participants;
-                                int existingParticipantIndex = -1;
-                                for (int j = 0; j < existingParticipants.Count; j++)
-                                {
-                                    InteractiveParticipant participant = existingParticipants[j];
-                                    if (participant.UserID == newParticipant.UserID)
-                                    {
-                                        existingParticipantIndex = j;
-                                    }
-                                }
-                                if (existingParticipantIndex != -1)
-                                {
-                                    CloneParticipantValues(existingParticipants[existingParticipantIndex], newParticipant);
-                                }
-                                else
-                                {
-                                    _participants.Add(newParticipant);
-                                }
                                 _queuedEvents.Add(new InteractiveParticipantStateChangedEventArgs(InteractiveEventType.ParticipantStateChanged, newParticipant, newParticipant.State));
                             }
                             break;
