@@ -7,7 +7,10 @@ using System.Net;
 using System.Net.Security;
 using System.Text;
 using System.Threading;
-#if WINDOWS_UWP
+using UnityEngine;
+using UnityEngine.Networking;
+using System.Collections;
+#if UNITY_WSA
 using Windows.System.Threading;
 using System.Threading.Tasks;
 using Windows.Networking.Sockets;
@@ -18,10 +21,16 @@ using Windows.Storage.Streams;
 using Windows.Web.Http;
 using System.Net.Http.Headers;
 using Windows.Data.Json;
-#else
+#endif
+#if UNITY_EDITOR || UNITY_STANDALONE || UNITY_IOS
 using System.Security.Cryptography.X509Certificates;
 using System.Timers;
 using WebSocketSharp;
+using Microsoft.Win32;
+#endif
+#if UNITY_XBOXONE && !UNITY_EDITOR
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 #endif
 
 namespace Microsoft.Mixer
@@ -83,6 +92,12 @@ namespace Microsoft.Mixer
         }
 
         private string AppID
+        {
+            get;
+            set;
+        }
+
+        private string ShareCode
         {
             get;
             set;
@@ -216,7 +231,10 @@ namespace Microsoft.Mixer
         ///// that supports Xbox Live tokens.
         ///// </param>
         /// <remarks></remarks>
-        public void Initialize(bool goInteractive = true/*, string authToken = ""*/) // TODO: Sync with Molly on AuthToken
+        public void Initialize(
+            bool goInteractive = true, 
+            string authToken = "", 
+            string websocketHostsJson = "") // This last parameter is for internal use only.
         {
             if (InteractivityState != InteractivityState.NotInitialized)
             {
@@ -230,19 +248,68 @@ namespace Microsoft.Mixer
             {
                 _shouldStartInteractive = true;
             }
-            //_authToken = authToken;
+#if UNITY_EDITOR || UNITY_STANDALONE || UNITY_WSA
+            if (!string.IsNullOrEmpty(authToken))
+            {
+                _authToken = authToken;
+            }
             InitiateConnection();
+#elif UNITY_XBOXONE
+            // For UNITY_XBOXONE platform games, we do most of the initialization sequence in native code.
+            if (string.IsNullOrEmpty(ProjectVersionID) ||
+               (string.IsNullOrEmpty(AppID) && string.IsNullOrEmpty(ShareCode)))
+            {
+                PopulateConfigData();
+            }
+
+            string targetWebsocketUrl = parseWebsocketConnectionUrl(websocketHostsJson);
+            Int32 result = MixerEraNativePlugin_Initialize(targetWebsocketUrl, ProjectVersionID, ShareCode);
+            if (result != 0)
+            {
+                if (result == 1245)
+                {
+                    LogError("Error: No signed in user. Please sign in a user and try again.");
+                }
+                else
+                {
+                    LogError("Error: Could not initialize. Error code: " + result.ToString() + ".");
+                }
+            }
+#endif
+            return;
         }
 
         private void CreateStorageDirectoryIfNotExists()
         {
+#if UNITY_EDITOR
             if (!Directory.Exists(_streamingAssetsPath))
             {
                 Directory.CreateDirectory(_streamingAssetsPath);
             }
+#endif
         }
 
-#if !WINDOWS_UWP
+        private string parseWebsocketConnectionUrl(string potentialWebsocketUrlsJson)
+        {
+            string targetWebsocketUrl = string.Empty;
+            using (StringReader stringReader = new StringReader(potentialWebsocketUrlsJson))
+            using (JsonTextReader jsonReader = new JsonTextReader(stringReader))
+            {
+                while (jsonReader.Read())
+                {
+                    if (jsonReader.Value != null &&
+                        jsonReader.Value.ToString() == WS_MESSAGE_KEY_WEBSOCKET_ADDRESS)
+                    {
+                        jsonReader.Read();
+                        targetWebsocketUrl = jsonReader.Value.ToString();
+                        break;
+                    }
+                }
+            }
+            return targetWebsocketUrl;
+        }
+
+#if !UNITY_WSA || UNITY_EDITOR
         private void InitiateConnection()
 #else
         private async void InitiateConnection()
@@ -252,43 +319,36 @@ namespace Microsoft.Mixer
             {
                 Uri getWebSocketUri = new Uri(WEBSOCKET_DISCOVERY_URL);
                 string responseString = string.Empty;
-#if !WINDOWS_UWP
-                HttpWebRequest getWebSocketUrlRequest = new HttpWebRequest(getWebSocketUri);
-                WebResponse response = getWebSocketUrlRequest.GetResponse();
-                using (Stream stream = response.GetResponseStream())
-                using (StreamReader streamReader = new StreamReader(response.GetResponseStream()))
+#if !UNITY_WSA || UNITY_EDITOR
+                if (string.IsNullOrEmpty(_websocketHostsJson))
                 {
-                    responseString = streamReader.ReadToEnd();
-                    streamReader.Close();
+                    HttpWebRequest getWebSocketUrlRequest = (HttpWebRequest)WebRequest.Create(getWebSocketUri);
+                    WebResponse response = getWebSocketUrlRequest.GetResponse();
+                    using (Stream stream = response.GetResponseStream())
+                    using (StreamReader streamReader = new StreamReader(response.GetResponseStream()))
+                    {
+                        responseString = streamReader.ReadToEnd();
+                        streamReader.Close();
+                    }
+                    response.Close();
                 }
-                response.Close();
+                else
+                {
+                    responseString = _websocketHostsJson;
+                }
 #else
                 var result = await _httpClient.GetAsync(getWebSocketUri);
                 responseString = result.Content.ToString();
 #endif
-                using (StringReader stringReader = new StringReader(responseString))
-                using (JsonTextReader jsonReader = new JsonTextReader(stringReader))
-                {
-                    while (jsonReader.Read())
-                    {
-                        if (jsonReader.Value != null &&
-                            jsonReader.Value.ToString() == WS_MESSAGE_KEY_WEBSOCKET_ADDRESS)
-                        {
-                            jsonReader.Read();
-                            _interactiveWebSocketUrl = jsonReader.Value.ToString();
-                            break;
-                        }
-                    }
-                }
+                _interactiveWebSocketUrl = parseWebsocketConnectionUrl(responseString);
             }
             catch (Exception ex)
             {
-                LogError(ex.Message);
-                LogError("Error: Could not retrieve the URL for the websocket.");
+                LogError("Error: Could not retrieve the URL for the websocket. Exception details: " + ex.Message);
             }
 
-            if (AppID == null ||
-                ProjectVersionID == null)
+            if (string.IsNullOrEmpty(ProjectVersionID) ||
+               (string.IsNullOrEmpty(AppID) && string.IsNullOrEmpty(ShareCode)))
             {
                 PopulateConfigData();
             }
@@ -300,15 +360,15 @@ namespace Microsoft.Mixer
             }
             else
             {
-                    // Show a shortCode
-#if !WINDOWS_UWP
+                // Show a shortCode
+#if UNITY_EDITOR || UNITY_STANDALONE
                 RefreshShortCode();
 
                 _checkAuthStatusTimer.Elapsed += CheckAuthStatusCallback;
                 _checkAuthStatusTimer.AutoReset = true;
                 _checkAuthStatusTimer.Enabled = true;
                 _checkAuthStatusTimer.Start();
-#else
+#elif UNITY_WSA
                 await RefreshShortCode();
                 _checkAuthStatusTimer = ThreadPoolTimer.CreatePeriodicTimer(
                     CheckAuthStatusCallback,
@@ -320,10 +380,7 @@ namespace Microsoft.Mixer
         private void PopulateConfigData()
         {
             string fullPathToConfigFile = string.Empty;
-            if (_isUnity)
-            {
-                fullPathToConfigFile = _streamingAssetsPath + "/" + INTERACTIVE_CONFIG_FILE_NAME;
-            }
+            fullPathToConfigFile = _streamingAssetsPath + "/" + INTERACTIVE_CONFIG_FILE_NAME;
             if (File.Exists(fullPathToConfigFile))
             {
                 string configText = File.ReadAllText(fullPathToConfigFile);
@@ -354,6 +411,13 @@ namespace Microsoft.Mixer
                                             ProjectVersionID = jsonReader.Value.ToString();
                                         }
                                         break;
+                                    case WS_MESSAGE_KEY_PROJECT_SHARE_CODE:
+                                        jsonReader.Read();
+                                        if (jsonReader.Value != null)
+                                        {
+                                            ShareCode = jsonReader.Value.ToString();
+                                        }
+                                        break;
                                     default:
                                         // No-op. We don't throw an error because the SDK only implements a
                                         // subset of the total possible server messages so we expect to see
@@ -375,7 +439,7 @@ namespace Microsoft.Mixer
             }
         }
 
-#if !WINDOWS_UWP
+#if UNITY_EDITOR
         private void CheckAuthStatusCallback(object sender, ElapsedEventArgs e)
         {
             if (TryGetTokenAsync())
@@ -385,7 +449,7 @@ namespace Microsoft.Mixer
                 ConnectToWebsocket();
             }
         }
-#else
+#elif UNITY_WSA
         private async void CheckAuthStatusCallback(ThreadPoolTimer timer)
         {
             bool gotTokenResult = false;
@@ -415,7 +479,7 @@ namespace Microsoft.Mixer
         }
 #endif
 
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
         private bool TryGetTokenAsync()
 #else
         private async Task<bool> TryGetTokenAsync()
@@ -423,7 +487,7 @@ namespace Microsoft.Mixer
         {
             bool isAuthenticated = false;
 
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
             WebRequest getShortCodeStatusRequest = WebRequest.Create(API_CHECK_SHORT_CODE_AUTH_STATUS_PATH + _authShortCodeRequestHandle);
             getShortCodeStatusRequest.ContentType = "application/json";
             getShortCodeStatusRequest.Method = "GET";
@@ -507,7 +571,7 @@ namespace Microsoft.Mixer
             return oauthExchangeCode;
         }
 
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
         private void GetOauthToken(string exchangeCode)
 #else
         private async void GetOauthToken(string exchangeCode)
@@ -516,7 +580,7 @@ namespace Microsoft.Mixer
             string getCodeServerResponse = string.Empty;
             try
             {
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
                 WebRequest getCodeRequest = WebRequest.Create(API_GET_OAUTH_TOKEN_PATH);
                 getCodeRequest.ContentType = "application/json";
                 getCodeRequest.Method = "POST";
@@ -579,7 +643,6 @@ namespace Microsoft.Mixer
                 }
                 _authToken = "Bearer " + accessToken;
                 _oauthRefreshToken = refreshToken;
-
                 WriteAuthTokensToCache();
             }
             catch
@@ -588,7 +651,7 @@ namespace Microsoft.Mixer
             }
         }
 
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
         private void RefreshShortCode()
 #else
         private async Task RefreshShortCode()
@@ -598,7 +661,7 @@ namespace Microsoft.Mixer
             string getShortCodeServerResponse = string.Empty;
             try
             {
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
                 HttpWebRequest getShortCodeRequest = (HttpWebRequest)WebRequest.Create(API_GET_SHORT_CODE_PATH);
                 getShortCodeRequest.ContentType = "application/json";
                 getShortCodeRequest.Method = "POST";
@@ -675,7 +738,7 @@ namespace Microsoft.Mixer
                         }
                     }
                 }
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
                 _refreshShortCodeTimer.Interval = shortCodeExpirationTime * SECONDS_IN_A_MILLISECOND;
                 _refreshShortCodeTimer.Enabled = true;
                 _refreshShortCodeTimer.Start();
@@ -693,7 +756,7 @@ namespace Microsoft.Mixer
             }
         }
 
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
         private bool VerifyAuthToken()
 #else
         private async Task<bool> VerifyAuthToken()
@@ -704,7 +767,7 @@ namespace Microsoft.Mixer
             {
                 // Make an HTTP request against the WebSocket and if it returns a non-401 response
                 // then the token is still valid.
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
                 WebRequest testWebSocketAuthRequest = WebRequest.Create(_interactiveWebSocketUrl.Replace("wss", "https"));
                 testWebSocketAuthRequest.Method = "GET";
                 WebHeaderCollection headerCollection1 = new WebHeaderCollection();
@@ -758,7 +821,7 @@ namespace Microsoft.Mixer
             return isTokenValid;
         }
 
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
         private void RefreshAuthToken()
 #else
         private async void RefreshAuthToken()
@@ -767,7 +830,7 @@ namespace Microsoft.Mixer
             string getCodeServerResponse = string.Empty;
             try
             {
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
                 WebRequest getCodeRequest = WebRequest.Create(API_GET_OAUTH_TOKEN_PATH);
                 getCodeRequest.ContentType = "application/json";
                 getCodeRequest.Method = "POST";
@@ -839,7 +902,7 @@ namespace Microsoft.Mixer
             }
         }
 
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
         private void ConnectToWebsocket()
 #else
         private async void ConnectToWebsocket()
@@ -852,23 +915,28 @@ namespace Microsoft.Mixer
             _pendingConnectToWebSocket = true;
 
             bool isTokenValid = false;
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
             isTokenValid = VerifyAuthToken();
 #else
             isTokenValid = await VerifyAuthToken();
 #endif
+
             if (!isTokenValid)
             {
                 RefreshAuthToken();
             }
 
-#if !WINDOWS_UWP
+#if UNITY_EDITOR || UNITY_STANDALONE
             _websocket = new WebSocket(_interactiveWebSocketUrl);
 
             NameValueCollection headerCollection = new NameValueCollection();
             headerCollection.Add("Authorization", _authToken);
             headerCollection.Add("X-Interactive-Version", ProjectVersionID);
             headerCollection.Add("X-Protocol-Version", PROTOCOL_VERSION);
+            if (!string.IsNullOrEmpty(ShareCode))
+            {
+                headerCollection.Add("X-Interactive-Sharecode", ShareCode);
+            }
             _websocket.SetHeaders(headerCollection);
 
             // Start a timer in case we never see the open event. WebSocketSharp
@@ -879,12 +947,16 @@ namespace Microsoft.Mixer
             _websocket.OnError += OnWebSocketError;
             _websocket.OnClose += OnWebSocketClose;
             _websocket.Connect();
-#else
+#elif UNITY_WSA
             try
             {
                 _websocket.SetRequestHeader("Authorization", _authToken);
                 _websocket.SetRequestHeader("X-Interactive-Version", ProjectVersionID);
                 _websocket.SetRequestHeader("X-Protocol-Version", PROTOCOL_VERSION);
+                if (!string.IsNullOrEmpty(ShareCode))
+                {
+                    _websocket.SetRequestHeader("X-Interactive-Sharecode", ShareCode);
+                }
 
                 _websocket.MessageReceived += OnWebSocketMessage;
                 _websocket.Closed += OnWebSocketClose;
@@ -893,29 +965,32 @@ namespace Microsoft.Mixer
                 {
                     _reconnectTimer.Cancel();
                 }
-                SendGetAllGroupsMessage();
-                SendGetAllScenesMessage();
             }
             catch (Exception ex)
             {
-                string foo = ex.Message;
-                var bar = ex.HResult;
-                LogError("asdsad");
+                LogError("Error: " + ex.Message);
             }
 #endif
         }
 
-#if !WINDOWS_UWP
+#if UNITY_EDITOR || UNITY_STANDALONE
         private void OnWebSocketClose(object sender, CloseEventArgs e)
         {
             UpdateInteractivityState(InteractivityState.InteractivityDisabled);
-            // Any type of error means we didn't succeed in connecting. If that happens we need to try to reconnect.
-            // We do a retry with a reduced interval.
-            _pendingConnectToWebSocket = false;
-            _reconnectTimer.Start();
+            if (e.Code == 4021)
+            {
+                LogError("Error: You are connected to this session somewhere else. Please disconnect from that session and try again.");
+            }
+            else
+            {
+                // Any type of error means we didn't succeed in connecting. If that happens we need to try to reconnect.
+                // We do a retry with a reduced interval.
+                _pendingConnectToWebSocket = false;
+                _reconnectTimer.Start();
+            }
         }
-#else
-            private void OnWebSocketClose(IWebSocket sender, WebSocketClosedEventArgs args)
+#elif UNITY_WSA
+        private void OnWebSocketClose(IWebSocket sender, WebSocketClosedEventArgs args)
         {
             UpdateInteractivityState(InteractivityState.InteractivityDisabled);
             // Any type of error means we didn't succeed in connecting. If that happens we need to try to reconnect.
@@ -930,66 +1005,48 @@ namespace Microsoft.Mixer
         private bool TryGetAuthTokensFromCache()
         {
             bool succeeded = false;
-#if !WINDOWS_UWP
-            string fullPathToDataFile = string.Empty;
-            if (_isUnity)
-            {
-                fullPathToDataFile = _streamingAssetsPath + "/" + INTERACTIVE_DATA_FILE_NAME;
-            }
-            if (File.Exists(fullPathToDataFile))
-            {
-                try
-                {
-                    string interactiveDataText = File.ReadAllText(fullPathToDataFile);
-                    string authToken = string.Empty;
-                    string refreshToken = string.Empty;
-
-                    using (StringReader stringReader = new StringReader(interactiveDataText))
-                    using (JsonTextReader jsonReader = new JsonTextReader(stringReader))
-                    {
-                        while (jsonReader.Read() && (authToken == string.Empty || refreshToken == string.Empty))
-                        {
-                            if (jsonReader.Value != null)
-                            {
-                                if (jsonReader.Value.ToString() == WS_MESSAGE_KEY_ACCESS_TOKEN_FROM_FILE)
-                                {
-                                    jsonReader.Read();
-                                    authToken = jsonReader.Value.ToString();
-                                }
-                                else if (jsonReader.Value.ToString() == WS_MESSAGE_KEY_REFRESH_TOKEN_FROM_FILE)
-                                {
-                                    jsonReader.Read();
-                                    refreshToken = jsonReader.Value.ToString();
-                                }
-                            }
-                        }
-                    }
-
-                    _authToken = authToken;
-                    _oauthRefreshToken = refreshToken;
-                    succeeded = true;
-                }
-                catch
-                {
-                    LogError("Error: Error reading the cached interactive data file.");
-                }
-            }
-            else
-            {
-                Log("No cached token found. This is an expected case.");
-            }
-#else
+#if UNITY_EDITOR || UNITY_STANDALONE
+            RegistryKey key = Registry.CurrentUser.OpenSubKey("Software", true);
+            key.CreateSubKey("MixerInteractive");
+            key = key.OpenSubKey("MixerInteractive", true);
+            key.CreateSubKey("Configuration");
+            key = key.OpenSubKey("Configuration", true);
+            _authToken = key.GetValue("MixerInteractive-AuthToken") as string;
+            _oauthRefreshToken = key.GetValue("MixerInteractive-RefreshToken") as string;
+#elif UNITY_WSA
             var localSettings = ApplicationData.Current.LocalSettings;
-            if (localSettings.Values["Mixer-AuthToken"] != null)
+            if (localSettings.Values["MixerInteractive-AuthToken"] != null)
             {
-                _authToken = localSettings.Values["Mixer-AuthToken"].ToString();
+                _authToken = localSettings.Values["MixerInteractive-AuthToken"].ToString();
             }
-            if (localSettings.Values["Mixer-RefreshToken"] != null)
+            if (localSettings.Values["MixerInteractive-RefreshToken"] != null)
             {
-                _oauthRefreshToken = localSettings.Values["Mixer-RefreshToken"].ToString();
+                _oauthRefreshToken = localSettings.Values["MixerInteractive-RefreshToken"].ToString();
             }
 #endif
+            if (!string.IsNullOrEmpty(_authToken) &&
+                !string.IsNullOrEmpty(_oauthRefreshToken))
+            {
+                succeeded = true;
+            }
             return succeeded;
+        }
+
+        private void WriteAuthTokensToCache()
+        {
+#if UNITY_EDITOR || UNITY_STANDALONE
+            RegistryKey key = Registry.CurrentUser.OpenSubKey("Software", true);
+            key.CreateSubKey("MixerInteractive");
+            key = key.OpenSubKey("MixerInteractive", true);
+            key.CreateSubKey("Configuration");
+            key = key.OpenSubKey("Configuration", true);
+            key.SetValue("MixerInteractive-AuthToken", _authToken);
+            key.SetValue("MixerInteractive-RefreshToken", _oauthRefreshToken);
+#elif UNITY_WSA
+            var localSettings = ApplicationData.Current.LocalSettings;
+            localSettings.Values["Mixer-AuthToken"] = _authToken;
+            localSettings.Values["Mixer-RefreshToken"] = _oauthRefreshToken;
+#endif
         }
 
         private void UpdateInteractivityState(InteractivityState state)
@@ -999,39 +1056,14 @@ namespace Microsoft.Mixer
             _queuedEvents.Add(interactivityStateChangedArgs);
         }
 
-        private void WriteAuthTokensToCache()
-        {
-            try
-            {
-#if !WINDOWS_UWP
-                var fullPathToDataFile = string.Empty;
-                if (_isUnity)
-                {
-                    fullPathToDataFile = _streamingAssetsPath + "/" + INTERACTIVE_DATA_FILE_NAME;
-                }
-                File.WriteAllText(fullPathToDataFile, "{ \"AuthToken\": \"" + _authToken + "\", \"RefreshToken\":  \"" + _oauthRefreshToken + "\"}");
-#else
-                var localSettings = ApplicationData.Current.LocalSettings;
-                localSettings.Values["Mixer-AuthToken"] = _authToken;
-                localSettings.Values["Mixer-RefreshToken"] = _oauthRefreshToken;
-#endif
-            }
-            catch
-            {
-                LogError("Error: Error writing refresh tokens to local storage.");
-            }
-        }
-
         private void OnWebsocketOpen(object sender, EventArgs e)
         {
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
             _reconnectTimer.Stop();
 #endif
-            SendGetAllGroupsMessage();
-            SendGetAllScenesMessage();
         }
 
-#if UNITY_EDITOR
+#if UNITY_EDITOR || UNITY_STANDALONE
         // The following function is required because Unity has it's own certificate store. So in order for us to make
         // https calls, we need this function.
         private static bool RemoteCertificateValidationCallback(object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors)
@@ -1100,6 +1132,11 @@ namespace Microsoft.Mixer
                 }
             }
             return null;
+        }
+
+        internal void CaptureTransaction(string transactionID)
+        {
+            SendCaptureTransactionMessage(transactionID);
         }
 
         /// <summary>
@@ -1233,6 +1270,30 @@ namespace Microsoft.Mixer
         /// </summary>
         public void DoWork()
         {
+#if UNITY_XBOXONE && !UNITY_EDITOR
+            bool moreMessagesToProcess = false;
+            do
+            {
+                var messageData = new string(' ', MAX_MESSAGE_SIZE);
+                GCHandle pinnedMemory = GCHandle.Alloc(messageData, GCHandleType.Pinned);
+                System.IntPtr dataPointer = pinnedMemory.AddrOfPinnedObject();
+                moreMessagesToProcess = MixerEraNativePlugin_GetNextMessage(dataPointer);
+                string strMessageData = Marshal.PtrToStringAnsi(dataPointer);
+                if (!string.IsNullOrEmpty(strMessageData) && strMessageData != " ")
+                {
+                    if (strMessageData.StartsWith("ERROR:"))
+                    {
+                        string errorMessage = strMessageData.TrimStart("ERROR:".ToCharArray());
+                        LogError(errorMessage);
+                    }
+                    else
+                    {
+                        ProcessWebSocketMessage(strMessageData);
+                    }
+                }
+            }
+            while (moreMessagesToProcess);
+#endif
             ClearPreviousControlState();
 
             // Go through all list of queued events and fire events.
@@ -1285,7 +1346,7 @@ namespace Microsoft.Mixer
                 return;
             }
             ResetInternalState();
-#if !WINDOWS_UWP
+#if UNITY_EDITOR || UNITY_STANDALONE
             if (_refreshShortCodeTimer != null)
             {
                 _refreshShortCodeTimer.Stop();
@@ -1309,7 +1370,7 @@ namespace Microsoft.Mixer
                 _websocket.OnClose -= OnWebSocketClose;
                 _websocket.Close();
             }
-#else
+#elif UNITY_WSA
             if (_refreshShortCodeTimer != null)
             {
                 _refreshShortCodeTimer.Cancel();
@@ -1337,7 +1398,7 @@ namespace Microsoft.Mixer
             ProcessWebSocketMessage(rawText);
         }
 
-#if !WINDOWS_UWP
+#if UNITY_EDITOR || UNITY_STANDALONE
         private void OnWebSocketMessage(object sender, MessageEventArgs e)
         {
             if (!e.IsText)
@@ -1346,7 +1407,7 @@ namespace Microsoft.Mixer
             }
             ProcessWebSocketMessage(e.Data);
         }
-#else
+#elif UNITY_WSA
         private void OnWebSocketMessage(MessageWebSocket sender, MessageWebSocketMessageReceivedEventArgs args)
         {
             if (args.MessageType == SocketMessageType.Utf8)
@@ -1358,7 +1419,7 @@ namespace Microsoft.Mixer
         }
 #endif
 
-#if !WINDOWS_UWP
+#if UNITY_EDITOR || UNITY_STANDALONE
         private void OnWebSocketError(object sender, WebSocketSharp.ErrorEventArgs e)
         {
             UpdateInteractivityState(InteractivityState.InteractivityDisabled);
@@ -1425,6 +1486,9 @@ namespace Microsoft.Mixer
                         {
                             switch (methodName)
                             {
+                                case WS_MESSAGE_METHOD_HELLO:
+                                    HandleHelloMessage();
+                                    break;
                                 case WS_MESSAGE_METHOD_PARTICIPANT_JOIN:
                                     HandleParticipantJoin(jsonReader);
                                     break;
@@ -1576,6 +1640,12 @@ namespace Microsoft.Mixer
             _shouldStartInteractive = false;
             _pendingConnectToWebSocket = false;
             UpdateInteractivityState(InteractivityState.NotInitialized);
+        }
+
+        private void HandleHelloMessage()
+        {
+            SendGetAllGroupsMessage();
+            SendGetAllScenesMessage();
         }
 
         private void HandleInteractivityStarted(JsonReader jsonReader)
@@ -1774,7 +1844,7 @@ namespace Microsoft.Mixer
                     }
                     if (existingParticipantIndex != -1)
                     {
-                        CloneParticipantValues(existingParticipants[existingParticipantIndex], newParticipant);
+                        CloneParticipantValues(newParticipant, existingParticipants[existingParticipantIndex]);
                     }
                     else
                     {
@@ -1809,6 +1879,8 @@ namespace Microsoft.Mixer
             string groupID = string.Empty;
             uint interactiveLevel = 0;
             bool inputDisabled = false;
+            double connectedAtMillisecondsPastEpoch = 0;
+            double lastInputAtMillisecondsPastEpoch = 0;
             DateTime lastInputAt = new DateTime();
             DateTime connectedAt = new DateTime();
             int startDepth = jsonReader.Depth;
@@ -1849,11 +1921,15 @@ namespace Microsoft.Mixer
                                 break;
                             case WS_MESSAGE_KEY_LAST_INPUT_AT:
                                 jsonReader.Read();
-                                DateTime.TryParse(jsonReader.Value.ToString(), out lastInputAt);
+                                lastInputAtMillisecondsPastEpoch = Convert.ToDouble(jsonReader.Value);
+                                DateTime lastInputAtDateTime = new DateTime(1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Utc);
+                                lastInputAt = lastInputAtDateTime.AddMilliseconds(lastInputAtMillisecondsPastEpoch).ToLocalTime();
                                 break;
                             case WS_MESSAGE_KEY_CONNECTED_AT:
                                 jsonReader.Read();
-                                DateTime.TryParse(jsonReader.Value.ToString(), out connectedAt);
+                                connectedAtMillisecondsPastEpoch = Convert.ToDouble(jsonReader.Value);
+                                DateTime connectedAtDateTime = new DateTime(1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Utc);
+                                connectedAt = connectedAtDateTime.AddMilliseconds(connectedAtMillisecondsPastEpoch).ToLocalTime();
                                 break;
                             case WS_MESSAGE_KEY_GROUP_ID:
                                 jsonReader.Read();
@@ -2077,6 +2153,7 @@ namespace Microsoft.Mixer
             InteractiveControl newControl;
             int startDepth = jsonReader.Depth;
             string controlID = string.Empty;
+            uint cost = 0;
             bool disabled = false;
             string helpText = string.Empty;
             string eTag = string.Empty;
@@ -2110,6 +2187,10 @@ namespace Microsoft.Mixer
                                 jsonReader.Read();
                                 kind = jsonReader.Value.ToString();
                                 break;
+                            case WS_MESSAGE_KEY_COST:
+                                jsonReader.ReadAsInt32();
+                                cost = Convert.ToUInt32(jsonReader.Value);
+                                break;
                             default:
                                 // No-op
                                 break;
@@ -2123,7 +2204,7 @@ namespace Microsoft.Mixer
             }
             if (kind == WS_MESSAGE_VALUE_CONTROL_TYPE_BUTTON)
             {
-                newControl = new InteractiveButtonControl(controlID, disabled, helpText, eTag, sceneID);
+                newControl = new InteractiveButtonControl(controlID, disabled, helpText, cost, eTag, sceneID);
             }
             else if (kind == WS_MESSAGE_VALUE_CONTROL_TYPE_JOYSTICK)
             {
@@ -2136,20 +2217,20 @@ namespace Microsoft.Mixer
             return newControl;
         }
 
-        private List<InputEvent> ReadInputs(JsonReader jsonReader)
+        private InputEvent ReadInputObject(JsonReader jsonReader)
         {
-            List<InputEvent> inputs = new List<InputEvent>();
+            InputEvent inputEvent = new InputEvent();
             while (jsonReader.Read())
             {
                 if (jsonReader.TokenType == JsonToken.StartObject)
                 {
-                    inputs.Add(ReadInput(jsonReader));
+                    inputEvent = ReadInputInnerObject(jsonReader);
                 }
             }
-            return inputs;
+            return inputEvent;
         }
 
-        private InputEvent ReadInput(JsonReader jsonReader)
+        private InputEvent ReadInputInnerObject(JsonReader jsonReader)
         {
             int startDepth = jsonReader.Depth;
             string controlID = string.Empty;
@@ -2209,7 +2290,13 @@ namespace Microsoft.Mixer
             {
                 LogError("Error: Error reading input from control " + controlID + ".");
             }
-            return new InputEvent(controlID, type, isPressed, x, y);
+            uint cost = 0;
+            var button = ControlFromControlID(controlID) as InteractiveButtonControl;
+            if (button != null)
+            {
+                cost = button.Cost;
+            }
+            return new InputEvent(controlID, type, isPressed, x, y, cost, "");
         }
 
         private void HandleParticipantJoin(JsonReader jsonReader)
@@ -2300,14 +2387,18 @@ namespace Microsoft.Mixer
         {
             internal string controlID;
             internal InteractiveEventType Type;
+            internal uint Cost;
             internal bool IsPressed;
+            internal string TransactionID;
             internal float X;
             internal float Y;
 
-            internal InputEvent(string cntrlID, InteractiveEventType type, bool isPressed, float x, float y)
+            internal InputEvent(string cntrlID, InteractiveEventType type, bool isPressed, float x, float y, uint cost, string transactionID)
             {
                 controlID = cntrlID;
                 Type = type;
+                Cost = cost;
+                TransactionID = transactionID;
                 IsPressed = isPressed;
                 X = x;
                 Y = y;
@@ -2317,7 +2408,8 @@ namespace Microsoft.Mixer
         private void HandleGiveInput(JsonReader jsonReader)
         {
             string participantSessionID = string.Empty;
-            List<InputEvent> inputEvents = new List<InputEvent>();
+            string transactionID = string.Empty;
+            InputEvent inputEvent = new InputEvent();
             while (jsonReader.Read())
             {
                 if (jsonReader.Value != null)
@@ -2330,7 +2422,11 @@ namespace Microsoft.Mixer
                             participantSessionID = jsonReader.Value.ToString();
                             break;
                         case WS_MESSAGE_KEY_INPUT:
-                            inputEvents = ReadInputs(jsonReader);
+                            inputEvent = ReadInputObject(jsonReader);
+                            break;
+                        case WS_MESSAGE_KEY_TRANSACTION_ID:
+                            jsonReader.Read();
+                            transactionID = jsonReader.Value.ToString();
                             break;
                         default:
                             // No-op
@@ -2338,6 +2434,7 @@ namespace Microsoft.Mixer
                     }
                 }
             }
+            inputEvent.TransactionID = transactionID;
             InteractiveParticipant participant = ParticipantBySessionId(participantSessionID);
             // The following allows the Unity Interactive Editor to simulate input.
             if (useMockData && _participants.Count > 0)
@@ -2345,20 +2442,17 @@ namespace Microsoft.Mixer
                 participant = _participants[0];
             }
             participant.LastInputAt = DateTime.UtcNow;
-            foreach (InputEvent inputEvent in inputEvents)
+            if (inputEvent.Type == InteractiveEventType.Button)
             {
-                if (inputEvent.Type == InteractiveEventType.Button)
-                {
-                    InteractiveButtonEventArgs eventArgs = new InteractiveButtonEventArgs(inputEvent.Type, inputEvent.controlID, participant, inputEvent.IsPressed);
-                    _queuedEvents.Add(eventArgs);
-                    UpdateInternalButtonState(eventArgs);
-                }
-                else if (inputEvent.Type == InteractiveEventType.Joystick)
-                {
-                    InteractiveJoystickEventArgs eventArgs = new InteractiveJoystickEventArgs(inputEvent.Type, inputEvent.controlID, participant, inputEvent.X, inputEvent.Y);
-                    _queuedEvents.Add(eventArgs);
-                    UpdateInternalJoystickState(eventArgs);
-                }
+                InteractiveButtonEventArgs eventArgs = new InteractiveButtonEventArgs(inputEvent.Type, inputEvent.controlID, participant, inputEvent.IsPressed, inputEvent.Cost, inputEvent.TransactionID);
+                _queuedEvents.Add(eventArgs);
+                UpdateInternalButtonState(eventArgs);
+            }
+            else if (inputEvent.Type == InteractiveEventType.Joystick)
+            {
+                InteractiveJoystickEventArgs eventArgs = new InteractiveJoystickEventArgs(inputEvent.Type, inputEvent.controlID, participant, inputEvent.X, inputEvent.Y);
+                _queuedEvents.Add(eventArgs);
+                UpdateInternalJoystickState(eventArgs);
             }
         }
 
@@ -2600,7 +2694,7 @@ namespace Microsoft.Mixer
         /// <returns></returns>
         public InteractiveButtonControl GetButton(string controlID)
         {
-            InteractiveButtonControl buttonControl = new InteractiveButtonControl(controlID, false, string.Empty, string.Empty, string.Empty);
+            InteractiveButtonControl buttonControl = new InteractiveButtonControl(controlID, false, string.Empty, 0, string.Empty, string.Empty);
             var buttons = Buttons;
             foreach (InteractiveButtonControl currentButtonControl in buttons)
             {
@@ -2717,6 +2811,31 @@ namespace Microsoft.Mixer
             _outstandingMessages.Add(messageID, WS_MESSAGE_METHOD_READY);
         }
 
+        internal void SendCaptureTransactionMessage(string transactionID)
+        {
+            var messageID = _currentmessageID++;
+            StringBuilder stringBuilder = new StringBuilder();
+            StringWriter stringWriter = new StringWriter(stringBuilder);
+            using (JsonWriter jsonWriter = new JsonTextWriter(stringWriter))
+            {
+                jsonWriter.WriteStartObject();
+                jsonWriter.WritePropertyName(WS_MESSAGE_KEY_TYPE);
+                jsonWriter.WriteValue(WS_MESSAGE_TYPE_METHOD);
+                jsonWriter.WritePropertyName(WS_MESSAGE_KEY_ID);
+                jsonWriter.WriteValue(messageID);
+                jsonWriter.WritePropertyName(WS_MESSAGE_TYPE_METHOD);
+                jsonWriter.WriteValue(WS_MESSAGE_METHOD_SET_CAPTURE_TRANSACTION);
+                jsonWriter.WritePropertyName(WS_MESSAGE_KEY_PARAMETERS);
+                jsonWriter.WriteStartObject();
+                jsonWriter.WritePropertyName(WS_MESSAGE_KEY_TRANSACTION_ID);
+                jsonWriter.WriteValue(transactionID);
+                jsonWriter.WriteEndObject();
+                jsonWriter.WriteEnd();
+                SendJsonString(stringWriter.ToString());
+            }
+            _outstandingMessages.Add(messageID, WS_MESSAGE_METHOD_SET_CAPTURE_TRANSACTION);
+        }
+
         internal void SendCreateGroupsMessage(string groupID, string sceneID)
         {
             var messageID = _currentmessageID++;
@@ -2769,8 +2888,8 @@ namespace Microsoft.Mixer
                 jsonWriter.WriteStartArray();
                 jsonWriter.WriteStartObject();
                 jsonWriter.WritePropertyName(WS_MESSAGE_KEY_GROUP_ID);
-                jsonWriter.WriteValue(groupID);
-                jsonWriter.WritePropertyName(WS_MESSAGE_KEY_SCENE_ID);
+                jsonWriter.WriteValue(WS_MESSAGE_VALUE_DEFAULT_GROUP_ID);
+                jsonWriter.WritePropertyName(groupID);
                 jsonWriter.WriteValue(sceneID);
                 jsonWriter.WritePropertyName(WS_MESSAGE_KEY_ETAG);
                 jsonWriter.WriteValue(groupEtag);
@@ -3047,18 +3166,26 @@ namespace Microsoft.Mixer
             _outstandingMessages.Add(messageID, method);
         }
 
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
         private void SendJsonString(string jsonString)
 #else
         private async void SendJsonString(string jsonString)
 #endif
         {
+            // The websocket is managed in native code for ERA.
+#if !UNITY_XBOXONE || UNITY_EDITOR
             if (_websocket == null)
             {
                 return;
             }
+#endif
 
-#if !WINDOWS_UWP
+#if UNITY_WSA && !UNITY_EDITOR
+            _messageWriter.WriteString(jsonString);
+            await _messageWriter.StoreAsync();
+#elif UNITY_XBOXONE && !UNITY_EDITOR
+            MixerEraNativePlugin_SendMessage(jsonString);
+#else
             if (!_websocket.IsAlive)
             {
                 ConnectToWebsocket();
@@ -3071,10 +3198,6 @@ namespace Microsoft.Mixer
             {
                 LogError("Error: Could not send message because the websocket connection was broken. Message: " + jsonString);
             }
-#else
-            DataWriter messageWriter = new DataWriter(_websocket.OutputStream);
-            messageWriter.WriteString(jsonString);
-            await messageWriter.StoreAsync();
 #endif
             Log(jsonString);
         }
@@ -3082,14 +3205,15 @@ namespace Microsoft.Mixer
         List<InteractiveEventArgs> _queuedEvents = new List<InteractiveEventArgs>();
         Dictionary<uint, string> _outstandingMessages = new Dictionary<uint, string>();
 
-#if !WINDOWS_UWP
+#if UNITY_EDITOR || UNITY_STANDALONE
         WebSocket _websocket;
-#else
-        MessageWebSocket _websocket = new MessageWebSocket();
+#elif UNITY_WSA
+        MessageWebSocket _websocket;
+        DataWriter _messageWriter;
 #endif
 
         private string _interactiveWebSocketUrl = string.Empty;
-#if !WINDOWS_UWP
+#if !UNITY_WSA || UNITY_EDITOR
         private System.Timers.Timer _checkAuthStatusTimer;
         private System.Timers.Timer _refreshShortCodeTimer;
         private System.Timers.Timer _reconnectTimer;
@@ -3106,11 +3230,11 @@ namespace Microsoft.Mixer
         private string _oauthRefreshToken;
         private bool _initializedGroups = false;
         private bool _initializedScenes = false;
-        private bool _isUnity = false;
         private bool _isUnityEditor = false;
         private bool _pendingConnectToWebSocket = false;
         private bool _shouldStartInteractive = true;
         private string _streamingAssetsPath = string.Empty;
+        private string _websocketHostsJson = string.Empty;
 
         private List<InteractiveGroup> _groups;
         private List<InteractiveScene> _scenes;
@@ -3128,6 +3252,7 @@ namespace Microsoft.Mixer
         private const string CONFIG_FILE_NAME = "interactiveconfig.json";
         private const int POLL_FOR_SHORT_CODE_AUTH_INTERVAL = 500; // Milliseconds
         private const int WEBSOCKET_RECONNECT_INTERVAL = 500; // Milliseconds
+        private const int MAX_MESSAGE_SIZE = 1024; // Bytes
 
         // Consts
         private const string INTERACTIVE_CONFIG_FILE_NAME = "interactiveconfig.json";
@@ -3140,6 +3265,7 @@ namespace Microsoft.Mixer
         private const string WS_MESSAGE_KEY_CONNECTED_AT = "connectedAt";
         private const string WS_MESSAGE_KEY_CONTROLS = "controls";
         private const string WS_MESSAGE_KEY_CONTROL_ID = "controlID";
+        private const string WS_MESSAGE_KEY_COST = "cost";
         private const string WS_MESSAGE_KEY_DISABLED = "disabled";
         private const string WS_MESSAGE_KEY_ERROR_CODE = "code";
         private const string WS_MESSAGE_KEY_ERROR_MESSAGE = "message";
@@ -3170,7 +3296,9 @@ namespace Microsoft.Mixer
         private const string WS_MESSAGE_KEY_SCENES = "scenes";
         private const string WS_MESSAGE_KEY_SCHEME = "scheme";
         private const string WS_MESSAGE_KEY_SESSION_ID = "sessionID";
+        private const string WS_MESSAGE_KEY_PROJECT_SHARE_CODE = "sharecode";
         private const string WS_MESSAGE_KEY_TEXT = "text";
+        private const string WS_MESSAGE_KEY_TRANSACTION_ID = "transactionID";
         private const string WS_MESSAGE_KEY_TYPE = "type";
         private const string WS_MESSAGE_KEY_USER_ID = "userID";
         private const string WS_MESSAGE_KEY_USERNAME = "username";
@@ -3193,12 +3321,21 @@ namespace Microsoft.Mixer
 
         // Methods
         private const string WS_MESSAGE_METHOD_CREATE_GROUPS = "createGroups";
+        private const string WS_MESSAGE_METHOD_GET_ALL_PARTICIPANTS = "getAllParticipants";
+        private const string WS_MESSAGE_METHOD_GET_GROUPS = "getGroups";
+        private const string WS_MESSAGE_METHOD_GET_SCENES = "getScenes";
+        private const string WS_MESSAGE_METHOD_GIVE_INPUT = "giveInput";
+        private const string WS_MESSAGE_METHOD_HELLO = "hello";
+        private const string WS_MESSAGE_METHOD_PARTICIPANT_JOIN = "onParticipantJoin";
+        private const string WS_MESSAGE_METHOD_PARTICIPANT_LEAVE = "onParticipantLeave";
+        private const string WS_MESSAGE_METHOD_PARTICIPANT_UPDATE = "onParticipantUpdate";
         private const string WS_MESSAGE_METHOD_READY = "ready";
         private const string WS_MESSAGE_METHOD_ON_CONTROL_UPDATE = "onControlUpdate";
         private const string WS_MESSAGE_METHOD_ON_GROUP_CREATE = "onGroupCreate";
         private const string WS_MESSAGE_METHOD_ON_GROUP_UPDATE = "onGroupUpdate";
         private const string WS_MESSAGE_METHOD_ON_READY = "onReady";
         private const string WS_MESSAGE_METHOD_ON_SCENE_CREATE = "onSceneCreate";
+        private const string WS_MESSAGE_METHOD_SET_CAPTURE_TRANSACTION = "capture";
         private const string WS_MESSAGE_METHOD_SET_COMPRESSION = "setCompression";
         private const string WS_MESSAGE_METHOD_SET_CONTROL_DISABLED = "setControlDisabled";
         private const string WS_MESSAGE_METHOD_SET_CONTROL_FIRED = "setControlFired";
@@ -3206,13 +3343,6 @@ namespace Microsoft.Mixer
         private const string WS_MESSAGE_METHOD_SET_JOYSTICK_INTENSITY = "setJoystickIntensity";
         private const string WS_MESSAGE_METHOD_SET_CONTROL_PROGRESS = "setControlProgress";
         private const string WS_MESSAGE_METHOD_SET_CURRENT_SCENE = "setCurrentScene";
-        private const string WS_MESSAGE_METHOD_GET_ALL_PARTICIPANTS = "getAllParticipants";
-        private const string WS_MESSAGE_METHOD_GET_GROUPS = "getGroups";
-        private const string WS_MESSAGE_METHOD_GET_SCENES = "getScenes";
-        private const string WS_MESSAGE_METHOD_GIVE_INPUT = "giveInput";
-        private const string WS_MESSAGE_METHOD_PARTICIPANT_JOIN = "onParticipantJoin";
-        private const string WS_MESSAGE_METHOD_PARTICIPANT_LEAVE = "onParticipantLeave";
-        private const string WS_MESSAGE_METHOD_PARTICIPANT_UPDATE = "onParticipantUpdate";
         private const string WS_MESSAGE_METHOD_UPDATE_CONTROLS = "updateControls";
         private const string WS_MESSAGE_METHOD_UPDATE_GROUPS = "updateGroups";
         private const string WS_MESSAGE_METHOD_UPDATE_PARTICIPANTS = "updateParticipants";
@@ -3248,6 +3378,18 @@ namespace Microsoft.Mixer
         // For MockData
         public static bool useMockData = false;
 
+#if UNITY_XBOXONE && !UNITY_EDITOR
+        // PInvokes for Xbox One ERA
+        [DllImport("MixerEraNativePlugin")]
+        private static extern Int32 MixerEraNativePlugin_Initialize(string serviceURL, string projectVersionID, string shareCode);
+
+        [DllImport("MixerEraNativePlugin")]
+        private static extern bool MixerEraNativePlugin_GetNextMessage(System.IntPtr strData);
+
+        [DllImport("MixerEraNativePlugin")]
+        private static extern void MixerEraNativePlugin_SendMessage(string message);
+#endif
+
         // Ctor
         private void InitializeInternal()
         {
@@ -3263,9 +3405,8 @@ namespace Microsoft.Mixer
             _buttonStates = new Dictionary<string, InternalButtonCountState>();
             _buttonStatesByParticipant = new Dictionary<uint, Dictionary<string, InternalButtonState>>();
 
-#if UNITY
             _isUnityEditor = UnityEngine.Application.isEditor;
-            if (_isUnityEditor)
+            if (Application.isEditor)
             {
                 LoggingLevel = LoggingLevel.Minimal;
             }
@@ -3273,18 +3414,15 @@ namespace Microsoft.Mixer
             {
                 LoggingLevel = LoggingLevel.None;
             }
-#endif
 
             _joystickStates = new Dictionary<string, InternalJoystickState>();
             _joystickStatesByParticipant = new Dictionary<uint, Dictionary<string, InternalJoystickState>>();
 
-#if UNITY
             _streamingAssetsPath = UnityEngine.Application.streamingAssetsPath;
-#endif
 
             CreateStorageDirectoryIfNotExists();
 
-#if !WINDOWS_UWP
+#if UNITY_EDITOR || UNITY_STANDALONE
             _checkAuthStatusTimer = new System.Timers.Timer(POLL_FOR_SHORT_CODE_AUTH_INTERVAL);
             _refreshShortCodeTimer = new System.Timers.Timer();
             _refreshShortCodeTimer.AutoReset = true;
@@ -3294,18 +3432,19 @@ namespace Microsoft.Mixer
             _reconnectTimer.AutoReset = true;
             _reconnectTimer.Enabled = false;
             _reconnectTimer.Elapsed += ReconnectWebsocketCallback;
-#else
+#elif UNITY_WSA
             _httpClient = new HttpClient();
+            _websocket = new MessageWebSocket();
+            _messageWriter = new DataWriter(_websocket.OutputStream);
 #endif
 
-#if UNITY_EDITOR
+#if UNITY_EDITOR || UNITY_STANDALONE
             // Required for HTTPS traffic to succeed in the Unity editor.
             ServicePointManager.ServerCertificateValidationCallback += new RemoteCertificateValidationCallback((sender, certificate, chain, policyErrors) => { return true; });
 #endif
-            _isUnity = true;
         }
 
-#if !WINDOWS_UWP
+#if UNITY_EDITOR || UNITY_STANDALONE
         private void RefreshShortCodeCallback(object sender, ElapsedEventArgs e)
         {
             RefreshShortCode();
@@ -3315,7 +3454,7 @@ namespace Microsoft.Mixer
         {
             ConnectToWebsocket();
         }
-#else
+#elif UNITY_WSA
         private async void RefreshShortCodeCallback(ThreadPoolTimer timer)
         {
             await RefreshShortCode();
@@ -3345,9 +3484,9 @@ namespace Microsoft.Mixer
             {
                 return;
             }
-#if UNITY
+
             UnityEngine.Debug.Log(message);
-#endif
+
         }
 
         private void ClearPreviousControlState()

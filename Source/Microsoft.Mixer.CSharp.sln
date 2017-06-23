@@ -11,10 +11,13 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Microsoft.Mixer.Stubs.CShar
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Microsoft.Mixer.UnityEditor.CSharp", "Microsoft.Mixer.UnityEditor.CSharp\Microsoft.Mixer.UnityEditor.CSharp.csproj", "{32BE72D6-3FE5-4C37-8638-2233DB529B09}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Microsoft.Mixer.Era.CSharp", "Microsoft.Mixer.Era.CSharp\Microsoft.Mixer.Era.CSharp.csproj", "{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}"
+EndProject
 Global
 	GlobalSection(SharedMSBuildProjectFiles) = preSolution
 		Microsoft.Mixer.Shared.CSharp\Microsoft.Mixer.Shared.CSharp.projitems*{32be72d6-3fe5-4c37-8638-2233db529b09}*SharedItemsImports = 4
 		Microsoft.Mixer.Shared.CSharp\Microsoft.Mixer.Shared.CSharp.projitems*{5f89d2ae-5a19-4398-bcec-2283505d20e0}*SharedItemsImports = 13
+		Microsoft.Mixer.Shared.CSharp\Microsoft.Mixer.Shared.CSharp.projitems*{627fe8eb-6d40-43b4-aa47-9e95f134e5c5}*SharedItemsImports = 4
 		Microsoft.Mixer.Shared.CSharp\Microsoft.Mixer.Shared.CSharp.projitems*{f8e36a6e-a2d4-4753-bc31-b1d5b6953f78}*SharedItemsImports = 4
 	EndGlobalSection
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -76,6 +79,22 @@ Global
 		{32BE72D6-3FE5-4C37-8638-2233DB529B09}.Release|x64.Build.0 = Release|Any CPU
 		{32BE72D6-3FE5-4C37-8638-2233DB529B09}.Release|x86.ActiveCfg = Release|Any CPU
 		{32BE72D6-3FE5-4C37-8638-2233DB529B09}.Release|x86.Build.0 = Release|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Debug|ARM.ActiveCfg = Debug|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Debug|ARM.Build.0 = Debug|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Debug|x64.Build.0 = Debug|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Debug|x86.Build.0 = Debug|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Release|ARM.ActiveCfg = Release|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Release|ARM.Build.0 = Release|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Release|x64.ActiveCfg = Release|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Release|x64.Build.0 = Release|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Release|x86.ActiveCfg = Release|Any CPU
+		{627FE8EB-6D40-43B4-AA47-9E95F134E5C5}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

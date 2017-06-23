@@ -35,11 +35,45 @@ namespace Microsoft.Mixer
             private set;
         }
 
-        internal InteractiveButtonEventArgs(InteractiveEventType type, string id, InteractiveParticipant participant, bool isPressed) : base(type)
+        /// <summary>
+        /// Unique string identifier for the spark transaction associated with this control event.
+        /// </summary>
+        public string TransactionID
+        {
+            get;
+            private set;
+        }
+
+        /// <summary>
+        /// Spark cost assigned to the button control.
+        /// </summary>
+        public uint Cost
+        {
+            get;
+            private set;
+        }
+
+        /// <summary>
+        /// Captures a given interactive event transaction, charging the sparks to the appropriate Participant.
+        /// </summary>
+        public void CaptureTransaction()
+        {
+            InteractivityManager.SingletonInstance.CaptureTransaction(TransactionID);
+        }
+
+        internal InteractiveButtonEventArgs(
+            InteractiveEventType type, 
+            string id, 
+            InteractiveParticipant participant, 
+            bool isPressed,
+            uint cost,
+            string transactionID) : base(type)
         {
             ControlID = id;
             Participant = participant;
+            Cost = cost;
             IsPressed = isPressed;
+            TransactionID = transactionID;
         }
     }
 }

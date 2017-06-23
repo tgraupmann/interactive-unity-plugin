@@ -57,7 +57,7 @@
     <Compile Include="InteractiveGroup.cs" />
     <Compile Include="InteractiveJoystickControl.cs" />
     <Compile Include="InteractiveJoystickEventArgs.cs" />
-    <Compile Include="InteractiveManager.cs" />
+    <Compile Include="InteractivityManager.cs" />
     <Compile Include="InteractiveParticipant.cs" />
     <Compile Include="InteractiveParticipantJoinEventArgs.cs" />
     <Compile Include="InteractiveParticipantLeaveEventArgs.cs" />

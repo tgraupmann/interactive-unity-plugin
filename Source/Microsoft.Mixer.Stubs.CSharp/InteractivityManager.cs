@@ -127,7 +127,7 @@ namespace Microsoft.Mixer
 
         public InteractiveButtonControl GetButton(string controlID)
         {
-            return new InteractiveButtonControl(controlID, false, string.Empty, string.Empty, string.Empty);
+            return new InteractiveButtonControl(controlID, false, string.Empty, 0, string.Empty, string.Empty);
         }
 
         public InteractiveJoystickControl GetJoystick(string controlID)

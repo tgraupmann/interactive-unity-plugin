@@ -121,7 +121,7 @@ namespace Microsoft.Mixer
 
         internal Int64 cooldownExpirationTime;
 
-        public InteractiveButtonControl(string controlID, bool disabled, string helpText, string eTag, string sceneID) : base(controlID, disabled, helpText, eTag, sceneID)
+        public InteractiveButtonControl(string controlID, bool disabled, string helpText, uint cost, string eTag, string sceneID) : base(controlID, disabled, helpText, eTag, sceneID)
         {
         }
     }

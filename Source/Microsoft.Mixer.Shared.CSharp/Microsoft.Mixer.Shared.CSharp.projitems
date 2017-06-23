@@ -17,7 +17,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)InteractiveGroup.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)InteractiveJoystickControl.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)InteractiveJoystickEventArgs.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)InteractiveManager.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InteractivityManager.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)InteractiveParticipant.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)InteractiveParticipantJoinEventArgs.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)InteractiveParticipantLeaveEventArgs.cs" />
