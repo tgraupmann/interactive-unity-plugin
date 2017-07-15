@@ -2888,8 +2888,8 @@ namespace Microsoft.Mixer
                 jsonWriter.WriteStartArray();
                 jsonWriter.WriteStartObject();
                 jsonWriter.WritePropertyName(WS_MESSAGE_KEY_GROUP_ID);
-                jsonWriter.WriteValue(WS_MESSAGE_VALUE_DEFAULT_GROUP_ID);
-                jsonWriter.WritePropertyName(groupID);
+                jsonWriter.WriteValue(groupID);
+                jsonWriter.WritePropertyName(WS_MESSAGE_KEY_SCENE_ID);
                 jsonWriter.WriteValue(sceneID);
                 jsonWriter.WritePropertyName(WS_MESSAGE_KEY_ETAG);
                 jsonWriter.WriteValue(groupEtag);
