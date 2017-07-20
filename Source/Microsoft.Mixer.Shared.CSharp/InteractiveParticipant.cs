@@ -98,16 +98,21 @@ namespace Microsoft.Mixer
             get
             {
                 List<InteractiveButtonControl> buttonsForParticipant = new List<InteractiveButtonControl>();
-                var buttonStatesByParticipantKeys = InteractivityManager._buttonStatesByParticipant[UserID].Keys;
-                foreach (string key in buttonStatesByParticipantKeys)
+                Dictionary<string, InternalButtonState> buttonState;
+                bool participantEntryExists = InteractivityManager._buttonStatesByParticipant.TryGetValue(UserID, out buttonState);
+                if (participantEntryExists)
                 {
-                    var allButtons = InteractivityManager.SingletonInstance.Buttons;
-                    foreach (InteractiveButtonControl button in allButtons)
+                    var buttonStatesByParticipantKeys = buttonState.Keys;
+                    foreach (string key in buttonStatesByParticipantKeys)
                     {
-                        if (key == button.ControlID)
+                        var allButtons = InteractivityManager.SingletonInstance.Buttons;
+                        foreach (InteractiveButtonControl button in allButtons)
                         {
-                            buttonsForParticipant.Add(button);
-                            break;
+                            if (key == button.ControlID)
+                            {
+                                buttonsForParticipant.Add(button);
+                                break;
+                            }
                         }
                     }
                 }
@@ -123,16 +128,21 @@ namespace Microsoft.Mixer
             get
             {
                 List<InteractiveJoystickControl> joysticksForParticipant = new List<InteractiveJoystickControl>();
-                var buttonStatesByParticipantKeys = InteractivityManager._buttonStatesByParticipant[UserID].Keys;
-                foreach (string key in buttonStatesByParticipantKeys)
+                Dictionary<string, InternalJoystickState> joystickByParticipant;
+                bool participantEntryExists = InteractivityManager._joystickStatesByParticipant.TryGetValue(UserID, out joystickByParticipant);
+                if (participantEntryExists)
                 {
-                    var allJoysticks = InteractivityManager.SingletonInstance.Joysticks;
-                    foreach (InteractiveJoystickControl joystick in allJoysticks)
+                    var joystickStatesByParticipantKeys = joystickByParticipant.Keys;
+                    foreach (string key in joystickStatesByParticipantKeys)
                     {
-                        if (key == joystick.ControlID)
+                        var allJoysticks = InteractivityManager.SingletonInstance.Joysticks;
+                        foreach (InteractiveJoystickControl joystick in allJoysticks)
                         {
-                            joysticksForParticipant.Add(joystick);
-                            break;
+                            if (key == joystick.ControlID)
+                            {
+                                joysticksForParticipant.Add(joystick);
+                                break;
+                            }
                         }
                     }
                 }
