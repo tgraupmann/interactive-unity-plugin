@@ -6,6 +6,10 @@ namespace MixerInteractiveExamples
 {
     public class HealthValue : MonoBehaviour
     {
+        /// <summary>
+        /// Meta reference to the Chroma Animation
+        /// </summary>
+        public UnityNativeChromaSDKPlayAndDeactivate ChromaAnimation = null;
 
         // Use this for initialization
         void Start()
@@ -26,6 +30,11 @@ namespace MixerInteractiveExamples
                 int currentHealth = int.Parse(healthText.text);
                 currentHealth++;
                 healthText.text = currentHealth.ToString();
+
+                if (ChromaAnimation)
+                {
+                    ChromaAnimation.Activate();
+                }
             }
         }
     }

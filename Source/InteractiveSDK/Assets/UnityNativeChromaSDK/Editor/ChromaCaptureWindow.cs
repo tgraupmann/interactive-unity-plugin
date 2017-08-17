@@ -803,13 +803,23 @@ class ChromaCaptureWindow : EditorWindow
         {
             GUILayout.BeginHorizontal(GUILayout.Width(position.width));
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Make Composite GameObject"))
+            GUILayout.Label("Make Composite:");
+            if (GUILayout.Button("PlayOnEnable"))
             {
-                GameObject go = new GameObject("CompositeAnimation");
+                GameObject go = new GameObject("CompositePlayOnEnable");
                 for (UnityNativeChromaSDK.Device device = UnityNativeChromaSDK.Device.ChromaLink; device < UnityNativeChromaSDK.Device.MAX; ++device)
                 {
                     string animationName = GetCompositeName(device);
                     go.AddComponent<UnityNativeChromaSDKPlayOnEnable>().AnimationName = animationName;
+                }
+            }
+            if (GUILayout.Button("PlayAndDeactivate"))
+            {
+                GameObject go = new GameObject("CompositePlayAndDeactivate");
+                for (UnityNativeChromaSDK.Device device = UnityNativeChromaSDK.Device.ChromaLink; device < UnityNativeChromaSDK.Device.MAX; ++device)
+                {
+                    string animationName = GetCompositeName(device);
+                    go.AddComponent<UnityNativeChromaSDKPlayAndDeactivate>().AnimationName = animationName;
                 }
             }
             GUILayout.FlexibleSpace();
