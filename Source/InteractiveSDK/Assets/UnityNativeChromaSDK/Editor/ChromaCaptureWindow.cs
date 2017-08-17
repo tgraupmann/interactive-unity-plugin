@@ -904,9 +904,12 @@ class ChromaCaptureWindow : EditorWindow
                 {
                     OnClickClose();
                 }
-                if (GUILayout.Button("Edit"))
+                if (_mMode == Modes.Normal)
                 {
-                    OnClickEdit();
+                    if (GUILayout.Button("Edit"))
+                    {
+                        OnClickEdit();
+                    }
                 }
                 GUILayout.EndHorizontal();
 
@@ -1098,6 +1101,10 @@ class ChromaCaptureWindow : EditorWindow
                         GUILayout.EndHorizontal();
 
                         GUILayout.Label("Edit:");
+                        if (GUILayout.Button("Edit"))
+                        {
+                            UnityNativeChromaSDK.EditAnimation(animationName);
+                        }
                         if (GUILayout.Button("Reverse Animation"))
                         {
                             int animationId = GetAnimation(animationName);

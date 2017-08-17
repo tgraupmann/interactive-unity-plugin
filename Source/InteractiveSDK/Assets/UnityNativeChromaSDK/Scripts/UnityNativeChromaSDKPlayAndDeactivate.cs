@@ -27,7 +27,11 @@ public class UnityNativeChromaSDKPlayAndDeactivate: MonoBehaviour
             animation.enabled = true;
         }
 
+#if UNITY_3 || UNITY_3_0 || UNITY_3_1 || UNITY_3_2 || UNITY_3_3 || UNITY_3_4 || UNITY_3_5
+        gameObject.active = true;
+#else
         gameObject.SetActive(true);
+#endif
     }
 
     // Play the animation on enable
